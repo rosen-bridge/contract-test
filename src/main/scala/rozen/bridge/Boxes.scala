@@ -3,14 +3,16 @@ package rozen.bridge
 import helpers.Configs
 import org.ergoplatform.appkit.impl.ErgoTreeContract
 import org.ergoplatform.appkit.{Address, BlockchainContext, ErgoContract, ErgoToken, ErgoType, ErgoValue, InputBox, JavaHelpers, OutBox, UnsignedTransaction}
+import scorex.util.encode.Base16
 import special.collection.Coll
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.util.Random
 
 object Boxes {
 
-  private def getRandomHexString(length: Int = 64) = {
+  def getRandomHexString(length: Int = 64) = {
     val r = new Random()
     val sb = new StringBuffer
     while ( {
@@ -75,13 +77,50 @@ object Boxes {
     bankBuilder.build()
   }
 
-  def createLockBox(ctx: BlockchainContext, EWRId: String, EWRCount: Long, UTP: Array[Byte]): OutBox = {
+  def createLockBox(ctx: BlockchainContext, EWRId: String, EWRCount: Long, UTP: Array[Byte], tokens: ErgoToken*): OutBox = {
+    val txB = ctx.newTxBuilder()
+    val tokensSeq = Seq(new ErgoToken(EWRId, EWRCount)) ++ tokens.toSeq
+    txB.outBoxBuilder()
+      .value(Configs.minBoxValue)
+      .contract(Contracts.WatcherLock)
+      .tokens(tokensSeq: _*)
+      .registers(ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())))
+      .build()
+  }
+
+  def createFraudBox(ctx: BlockchainContext, EWRId: String, UTP: Array[Byte]): OutBox = {
     val txB = ctx.newTxBuilder()
     txB.outBoxBuilder()
-      .contract(Contracts.WatcherLock)
-      .tokens(new ErgoToken(EWRId, EWRCount))
-      .registers(ErgoValue.of(UTP))
+      .value(Configs.minBoxValue)
+      .contract(Contracts.WatcherFraudLock)
+      .tokens(new ErgoToken(EWRId, 1))
+      .registers(ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())))
       .build()
+  }
+
+  def createCommitment(ctx: BlockchainContext, EWRId: String, UTP:Array[Byte], RequestId: Array[Byte], commitment: Array[Byte]): OutBox = {
+    ctx.newTxBuilder().outBoxBuilder()
+      .value(Configs.minBoxValue)
+      .contract(Contracts.WatcherCommitment)
+      .tokens(new ErgoToken(EWRId, 1))
+      .registers(
+        ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
+        ErgoValue.of(RequestId),
+        ErgoValue.of(commitment),
+      ).build()
+  }
+
+  def createTriggerEventBox(ctx: BlockchainContext, EWRId: String, UTP: Seq[Array[Byte]], commitment: Commitment): OutBox = {
+    val R4 = UTP.sortWith(Base16.encode(_) > Base16.encode(_)).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray
+    val R5 = commitment.partsArray().map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item))
+    ctx.newTxBuilder().outBoxBuilder()
+      .value(Configs.minBoxValue * UTP.length)
+      .contract(Contracts.WatcherTriggerEvent)
+      .tokens(new ErgoToken(EWRId, UTP.length))
+      .registers(
+        ErgoValue.of(R4, ErgoType.collType(ErgoType.byteType())),
+        ErgoValue.of(R5, ErgoType.collType(ErgoType.byteType())),
+      ).build()
   }
 
   def getTokenCount(TokenId: String, box: InputBox): Long = {
@@ -89,11 +128,17 @@ object Boxes {
     if(EWRToken.length == 0) 0 else EWRToken(0).getValue
   }
 
-  //  def createEvent(ctx: BlockchainContext,  utp: InputBox, ewr: InputBox, eventHash: Array[Byte]): UnsignedTransaction = {
-  //
-  //  }
-  //
-  //  def revealEvent(ctx: BlockchainContext, utp: InputBox, eventData: Array[Coll[Byte]], merge_ewr: InputBox*): UnsignedTransaction = {
-  //
-  //  }
+  def calcTotalErgAndTokens(boxes: Seq[InputBox]): mutable.Map[String, Long] ={
+    val tokens: mutable.Map[String, Long] = mutable.Map()
+    val totalErg = boxes.map(item => item.getValue).reduce((a, b) => a + b)
+    boxes.foreach(box => {
+      box.getTokens.forEach(token => {
+        val tokenId = token.getId.toString
+        tokens.update(tokenId, tokens.getOrElse(tokenId, 0L) + token.getValue)
+      })
+    });
+    tokens.update("", totalErg);
+    tokens
+  }
+
 }

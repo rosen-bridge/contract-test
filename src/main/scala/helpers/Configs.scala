@@ -43,5 +43,6 @@ object Configs extends ConfigHelper {
   object tokens {
     lazy val RSN: String = readKey("tokens.RSN")
     lazy val BankNft: String = readKey("tokens.BankNFT")
+    lazy val GuardNFT: String = readKey("tokens.GuardNFT")
   }
 }
