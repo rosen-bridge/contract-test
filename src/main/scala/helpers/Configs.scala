@@ -40,9 +40,11 @@ object Configs extends ConfigHelper {
   lazy val minBoxValue: Long = readKey("box.min").toLong
   val ergoClient: ErgoClient = RestApiErgoClient.create(node.url, node.networkType, node.apiKey, explorer)
   lazy val addressEncoder = new ErgoAddressEncoder(node.networkType.networkPrefix)
+  lazy val cleanupConfirm = readKey("cleanup.confirm", (720 * 7).toString).toInt
   object tokens {
     lazy val RSN: String = readKey("tokens.RSN")
     lazy val BankNft: String = readKey("tokens.BankNFT")
     lazy val GuardNFT: String = readKey("tokens.GuardNFT")
+    lazy val CleanupNFT: String = readKey("tokens.CleanupNFT")
   }
 }

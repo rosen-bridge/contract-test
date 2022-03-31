@@ -1,4 +1,4 @@
-package rozen.bridge
+package rosen.bridge
 
 import helpers.Configs
 import org.ergoplatform.appkit.impl.ErgoTreeContract
@@ -67,7 +67,7 @@ object Boxes {
       .registers(
         ErgoValue.of(R4, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(JavaHelpers.SigmaDsl.Colls.fromArray(userEWR.toArray), ErgoType.longType()),
-        ErgoValue.of(JavaHelpers.SigmaDsl.Colls.fromArray(Array(100L, 51L)), ErgoType.longType()),
+        ErgoValue.of(JavaHelpers.SigmaDsl.Colls.fromArray(Array(100L, 51L, 0L, 9999L)), ErgoType.longType()),
         ErgoValue.of(R7)
       )
     if(RSNCount > 0){
@@ -84,7 +84,11 @@ object Boxes {
       .value(Configs.minBoxValue)
       .contract(Contracts.WatcherLock)
       .tokens(tokensSeq: _*)
-      .registers(ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())))
+      .registers(
+        ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
+        // this value must exists in case of redeem commitment.
+        ErgoValue.of(Seq(Array(0.toByte)).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
+      )
       .build()
   }
 
@@ -105,8 +109,9 @@ object Boxes {
       .tokens(new ErgoToken(EWRId, 1))
       .registers(
         ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
-        ErgoValue.of(RequestId),
+        ErgoValue.of(Seq(RequestId).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(commitment),
+        ErgoValue.of(Contracts.getContractScriptHash(Contracts.WatcherLock)),
       ).build()
   }
 
@@ -120,6 +125,7 @@ object Boxes {
       .registers(
         ErgoValue.of(R4, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(R5, ErgoType.collType(ErgoType.byteType())),
+        ErgoValue.of(Contracts.getContractScriptHash(Contracts.WatcherLock))
       ).build()
   }
 
