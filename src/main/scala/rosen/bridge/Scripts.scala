@@ -272,7 +272,7 @@ object Scripts {
        |      val box = OUTPUTS(index - 1)
        |      val UTP: Coll[Byte] = UTPs(index)
        |      if(box.R4[Coll[Coll[Byte]]].isDefined){
-       |        (box.propositionBytes == OUTPUTS(0).propositionBytes) // && (box.R4[Coll[Coll[Byte]]].get == Coll(UTP))
+       |        (box.propositionBytes == OUTPUTS(0).propositionBytes) && (box.R4[Coll[Coll[Byte]]].get == Coll(UTP))
        |      } else {
        |        false
        |      }
@@ -290,11 +290,19 @@ object Scripts {
 
   lazy val WatcherFraudLockScript: String =
     s"""{
+       |  // R4: Coll[Coll[Byte]] = only one element display user UTP id. used to update configuration box
+       |  // [Bank, Fraud, Cleanup] => [Bank]
        |  val BankNFT = fromBase64("BANK_NFT");
+       |  val CleanupNFT = fromBase64("CLEANUP_NFT");
+       |  val OutputWithToken = OUTPUTS.slice(1, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
+       |  val OutputWithEWR = OutputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
+       |  // Lock or unlock operation. [Bank, Lock, UTP] => [Bank, Lock(optional)]
        |  sigmaProp(
        |    allOf(
        |      Coll(
-       |        true
+       |        OutputWithEWR == false,
+       |        INPUTS(0).tokens(0)._1 == BankNFT,
+       |        INPUTS(2).tokens(0)._1 == CleanupNFT,
        |      )
        |    )
        |  )

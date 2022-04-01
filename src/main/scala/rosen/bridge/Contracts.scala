@@ -77,6 +77,7 @@ object Contracts {
   private def generateWatcherFraudLockContract(): ErgoContract = {
     Configs.ergoClient.execute(ctx => {
       val fraudScript = Scripts.WatcherFraudLockScript
+        .replace("CLEANUP_NFT", Base64.encode(Base16.decode(Configs.tokens.CleanupNFT).get))
         .replace("BANK_NFT", Base64.encode(Base16.decode(Configs.tokens.BankNft).get))
 
       val contract = ctx.compileContract(ConstantsBuilder.create().build(), fraudScript)
