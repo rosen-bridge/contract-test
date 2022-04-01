@@ -269,10 +269,12 @@ object Scripts {
        |  val selectedIndices = UTPs.indices.slice(1, UTPs.size)
        |  val checkAllBoxes = selectedIndices.forall {
        |    (index: Int) => {
-       |      val box = OUTPUTS(index - 1)
+       |      val box: Box = OUTPUTS(index - 1)
        |      val UTP: Coll[Byte] = UTPs(index)
+       |      val isBoxUTP = true // box.R4[Coll[Coll[Byte]]].get == Coll(UTP)
+       |      val isBoxContract = box.propositionBytes == OUTPUTS(0).propositionBytes
        |      if(box.R4[Coll[Coll[Byte]]].isDefined){
-       |        (box.propositionBytes == OUTPUTS(0).propositionBytes) && (box.R4[Coll[Coll[Byte]]].get == Coll(UTP))
+       |        isBoxUTP && isBoxContract
        |      } else {
        |        false
        |      }
