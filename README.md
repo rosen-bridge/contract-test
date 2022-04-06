@@ -1,6 +1,6 @@
 # Rosen Bridge
 A brief description about Rosen Bridge
-## Raffle Components
+## Bridge Components
 
 Before explaining the main idea and procedures, it's better to get familiar with its components:
 
