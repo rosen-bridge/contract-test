@@ -319,9 +319,29 @@ object Main {
   }
 
   def mergeFraudToBank(ctx: BlockchainContext, fraud: InputBox): Unit = {
+    val prover = getProver()
+    val box2 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.CleanupNFT, 1L))
     val UTP = fraud.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray(0).toArray
-    // TODO must merge one EWR to bank.
-    println(s"one ${Base16.encode(UTP)} tokens slashed")
+    val EWRCount = bank.getTokens.get(1).getValue.toLong + 1
+    val RSNCount = bank.getTokens.get(2).getValue.toLong - 100
+    val users = bank.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray).clone()
+    var userEWR = bank.getRegisters.get(1).getValue.asInstanceOf[Coll[Long]].toArray.clone()
+    val userIndex = users.indexOf(UTP, 0)
+    if(userEWR(userIndex) > 1){
+      userEWR(userIndex) -= 1;
+    }else {
+      userEWR.patch(userIndex, Nil, 1)
+      users.patch(userIndex, Nil, 1)
+    }
+    val bankCandidate = Boxes.createBankBox(ctx, EWRId, EWRCount, RSNCount, users, userEWR, userIndex)
+    val unsigned = ctx.newTxBuilder().boxesToSpend(Seq(bank, fraud, box2).asJava)
+      .fee(Configs.fee)
+      .outputs(bankCandidate)
+      .sendChangeTo(prover.getAddress.getErgoAddress)
+      .build()
+    val signed = prover.sign(unsigned)
+    bank = signed.getOutputsToSpend.get(0)
+    println(s"one ${Base16.encode(UTP)} tokens slashed (user index: $userIndex)")
   }
 
   def moveToFraud(ctx: BlockchainContext): Unit = {
