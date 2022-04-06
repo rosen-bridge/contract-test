@@ -92,23 +92,7 @@ object Boxes {
       .build()
   }
 
-  def createLockBox(ctx: BlockchainContext, EWRId: String, EWRCount: Long, UTP: Array[Byte], index: Int, tokens: ErgoToken*): OutBox = {
-    val txB = ctx.newTxBuilder()
-    val tokensSeq = Seq(new ErgoToken(EWRId, EWRCount)) ++ tokens.toSeq
-    txB.outBoxBuilder()
-      .value(Configs.minBoxValue)
-      .contract(Contracts.WatcherLock)
-      .tokens(tokensSeq: _*)
-      .registers(
-        ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
-        // this value must exists in case of redeem commitment.
-        ErgoValue.of(Seq(Array(0.toByte)).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
-        ErgoValue.of(index),
-      )
-      .build()
-  }
-
-  def createFraudBox(ctx: BlockchainContext, EWRId: String, UTP: Array[Byte], index: Int): OutBox = {
+  def createFraudBox(ctx: BlockchainContext, EWRId: String, UTP: Array[Byte]): OutBox = {
     val txB = ctx.newTxBuilder()
     txB.outBoxBuilder()
       .value(Configs.minBoxValue)
@@ -116,8 +100,6 @@ object Boxes {
       .tokens(new ErgoToken(EWRId, 1))
       .registers(
         ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
-        ErgoValue.of(Seq(Array(0.toByte)).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
-        ErgoValue.of(index),
       )
       .build()
   }

@@ -266,7 +266,7 @@ object Scripts {
        |    )
        |  }
        |  val UTPs: Coll[Coll[Byte]] = SELF.R4[Coll[Coll[Byte]]].get
-       |  val mergeBoxes = OUTPUTS.filter { (box:Box) => box.R6[Int].isDefined }
+       |  val mergeBoxes = OUTPUTS.slice(0, UTPs.size)
        |  val checkAllUTPs = UTPs.zip(mergeBoxes).forall {
        |    (data: (Coll[Byte], Box)) => {
        |      Coll(data._1) == data._2.R4[Coll[Coll[Byte]]].get && data._2.propositionBytes == OUTPUTS(0).propositionBytes

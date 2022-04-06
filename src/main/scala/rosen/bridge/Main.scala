@@ -303,9 +303,9 @@ object Main {
     val notMergedLocks = locks.filter(item => item.commitment != null && !UTPHex.contains(item.getUTPHex()))
     val notMergedUTPs = notMergedLocks.map(item => item.getUTP())
     val userFee = commitment.fee / (UTPs.length + notMergedUTPs.length)
-    val mergedOutputs = UTPs.indices.map(item => Boxes.createLockBox(ctx, EWRId, 1, UTPs(item), item,new ErgoToken(commitment.targetChainTokenId, userFee)))
-    val notMergedOutputs = notMergedUTPs.map(item => Boxes.createLockBox(ctx, EWRId, 1, item, new ErgoToken(commitment.targetChainTokenId, userFee)))
-    val newLocks = mergedOutputs ++ notMergedOutputs
+    val newLocks = (UTPs ++ notMergedUTPs).map(item => {
+      Boxes.createLockBox(ctx, EWRId, 1, item, new ErgoToken(commitment.targetChainTokenId, userFee))
+    })
     val inputs = Seq(triggerEvent, guardBox, wBank) ++ notMergedLocks.map(item => item.commitment)
     val unsignedTx = ctx.newTxBuilder().boxesToSpend(inputs.asJava)
       .fee(Configs.fee)
@@ -353,7 +353,7 @@ object Main {
     val UTPs = triggerEvent.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray)
     val box1 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.CleanupNFT, 1L))
     val newFraud = UTPs.indices.map(index => {
-      Boxes.createFraudBox(ctx, EWRId, UTPs(index), index)
+      Boxes.createFraudBox(ctx, EWRId, UTPs(index))
     })
     val unsignedTx = ctx.newTxBuilder().boxesToSpend(Seq(triggerEvent, box1).asJava)
       .fee(Configs.fee)
