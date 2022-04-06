@@ -303,9 +303,9 @@ object Main {
     val notMergedLocks = locks.filter(item => item.commitment != null && !UTPHex.contains(item.getUTPHex()))
     val notMergedUTPs = notMergedLocks.map(item => item.getUTP())
     val userFee = commitment.fee / (UTPs.length + notMergedUTPs.length)
-    val newLocks = (UTPs ++ notMergedUTPs).map(item => {
-      Boxes.createLockBox(ctx, EWRId, 1, item, new ErgoToken(commitment.targetChainTokenId, userFee))
-    })
+    val mergedOutputs = UTPs.indices.map(item => Boxes.createLockBox(ctx, EWRId, 1, UTPs(item), item,new ErgoToken(commitment.targetChainTokenId, userFee)))
+    val notMergedOutputs = notMergedUTPs.map(item => Boxes.createLockBox(ctx, EWRId, 1, item, new ErgoToken(commitment.targetChainTokenId, userFee)))
+    val newLocks = mergedOutputs ++ notMergedOutputs
     val inputs = Seq(triggerEvent, guardBox, wBank) ++ notMergedLocks.map(item => item.commitment)
     val unsignedTx = ctx.newTxBuilder().boxesToSpend(inputs.asJava)
       .fee(Configs.fee)
@@ -321,17 +321,21 @@ object Main {
   def mergeFraudToBank(ctx: BlockchainContext, fraud: InputBox): Unit = {
     val prover = getProver()
     val box2 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.CleanupNFT, 1L))
-    val UTP = fraud.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray(0).toArray
+    val UTP = fraud.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray(0).toArray.clone()
     val EWRCount = bank.getTokens.get(1).getValue.toLong + 1
     val RSNCount = bank.getTokens.get(2).getValue.toLong - 100
-    val users = bank.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray).clone()
+    var users = bank.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray).clone()
     var userEWR = bank.getRegisters.get(1).getValue.asInstanceOf[Coll[Long]].toArray.clone()
-    val userIndex = users.indexOf(UTP, 0)
+    val userIndex = users.map(item => Base16.encode(item)).indexOf(Base16.encode(UTP), 0)
+    if(userIndex < 0){
+      println(s"user ${Base16.encode(UTP)} not found in bank")
+      return
+    }
     if(userEWR(userIndex) > 1){
       userEWR(userIndex) -= 1;
     }else {
-      userEWR.patch(userIndex, Nil, 1)
-      users.patch(userIndex, Nil, 1)
+      userEWR = userEWR.patch(userIndex, Nil, 1)
+      users = users.patch(userIndex, Nil, 1)
     }
     val bankCandidate = Boxes.createBankBox(ctx, EWRId, EWRCount, RSNCount, users, userEWR, userIndex)
     val unsigned = ctx.newTxBuilder().boxesToSpend(Seq(bank, fraud, box2).asJava)
@@ -348,8 +352,8 @@ object Main {
     val prover = getProver()
     val UTPs = triggerEvent.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray)
     val box1 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.CleanupNFT, 1L))
-    val newFraud = UTPs.map(item => {
-      Boxes.createFraudBox(ctx, EWRId, item)
+    val newFraud = UTPs.indices.map(index => {
+      Boxes.createFraudBox(ctx, EWRId, UTPs(index), index)
     })
     val unsignedTx = ctx.newTxBuilder().boxesToSpend(Seq(triggerEvent, box1).asJava)
       .fee(Configs.fee)
@@ -357,7 +361,7 @@ object Main {
       .outputs(newFraud: _*)
       .build()
     val tx = prover.sign(unsignedTx)
-    println("fraud detected")
+    println(s"Fraud detected. Generated fraud box count = ${tx.getOutputsToSpend.size()}")
     triggerEvent = null;
     newFraud.indices.foreach(index => mergeFraudToBank(ctx, tx.getOutputsToSpend.get(index)))
   }
@@ -365,9 +369,9 @@ object Main {
   def main(args: Array[String]): Unit = {
     Configs.ergoClient.execute(ctx => {
       createBankBox(ctx, 1e12.toLong, 100L, "ADA")
-      (1 to 6).foreach(item => lockRSN(ctx, 10000L))
-      unlockRSN(ctx, 50L, 2)
-      unlockRSN(ctx, 50L, 2)
+      (1 to 7).foreach(item => lockRSN(ctx, 10000L))
+      unlockRSN(ctx, 100L, 2)
+      unlockRSN(ctx, 99L, 2)
       redeemBank(ctx)
       val commitment = new Commitment()
       locks.indices.foreach(index => createCommitment(ctx, commitment, index))
@@ -377,6 +381,7 @@ object Main {
       locks.indices.foreach(index => createCommitment(ctx, commitment, index))
       triggerEvent(ctx, 0, Seq(), commitment)
       moveToFraud(ctx)
+      redeemBank(ctx)
     })
   }
 }

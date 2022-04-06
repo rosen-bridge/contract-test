@@ -266,24 +266,17 @@ object Scripts {
        |    )
        |  }
        |  val UTPs: Coll[Coll[Byte]] = SELF.R4[Coll[Coll[Byte]]].get
-       |  val selectedIndices = UTPs.indices.slice(1, UTPs.size)
-       |  val checkAllBoxes = selectedIndices.forall {
-       |    (index: Int) => {
-       |      val box: Box = OUTPUTS(index - 1)
-       |      val UTP: Coll[Byte] = UTPs(index)
-       |      val isBoxUTP = true // box.R4[Coll[Coll[Byte]]].get == Coll(UTP)
-       |      val isBoxContract = box.propositionBytes == OUTPUTS(0).propositionBytes
-       |      if(box.R4[Coll[Coll[Byte]]].isDefined){
-       |        isBoxUTP && isBoxContract
-       |      } else {
-       |        false
-       |      }
+       |  val mergeBoxes = OUTPUTS.filter { (box:Box) => box.R6[Int].isDefined }
+       |  val checkAllUTPs = UTPs.zip(mergeBoxes).forall {
+       |    (data: (Coll[Byte], Box)) => {
+       |      Coll(data._1) == data._2.R4[Coll[Coll[Byte]]].get && data._2.propositionBytes == OUTPUTS(0).propositionBytes
        |    }
        |  }
        |  sigmaProp(
        |    allOf(
        |      Coll(
-       |        checkAllBoxes,
+       |        UTPs.size == mergeBoxes.size,
+       |        checkAllUTPs,
        |        fraudScriptCheck,
        |      )
        |    )
