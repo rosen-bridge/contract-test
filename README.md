@@ -1,31 +1,30 @@
 # Rosen Bridge
-A brief description about Rosen Bridge
-## Bridge Components
+Rosen bridge is an Ergo-centric bridge enabling users to send and receive coins and tokens between Ergo and any other chain. In this document, we will explain the Rosen bridge design technically. You may also want to read about Rosen bridge's high-level concepts [here](https://github.com/mhssamadani/RosenBridge).
 
-Before explaining the main idea and procedures, it's better to get familiar with its components:
+## Bridge Components
+Before explaining the main idea and procedures, it's better to get familiar with its components and concepts:
+
+### Roles
+1. **Guard:** A guard is a trusted party performing final actions in the system. Actually, a set of trusted guards are needed to transfer money between chains. The guard set is a small set including real parties. Each guard individually verifies the events and performs the required action. However, all guards should agree on one event to make the final operation.
+2. **Watcher:** As the name suggests, watchers are some volunteer participants who watch two chains to create the transfer events. After a quorum of watchers reported the same event, a watcher will make a trigger event for guards. Watchers are not trusted and may have faults, intentionally or unintentionally. Anyway, the guilty watcher will be fined for his faulty action, and on the other hand, honest watchers get rewards.
 
 ### Tokens
+1. **Rosen Bridge Token (RSN):** The Rosen bridge token defines the bridge participation rights. Each person who has a portion of this token can participate in the bridge as a watcher. 
+2. **Ergo Watcher Rosen Token (EWR):** Each watcher volunteer needs to lock his RSN tokens to be a watcher of a specific bridge. The legitimate watchers receive EWR tokens on behalf of their RSN. Each of these tokens can be used to create new events, and if the event were true, guards would return the EWR to the watcher. EWR is a chain-specific token; thus, for each new bridge to other networks, we have different EWR tokens.
+3. **Guard NFT:** This is a guard identifier token. This token is locked in a multi-sig address; thus, N out of M guards must sign this contract to spend it.
+4. **Cleanup NFT:** This token is the cleanup service identifier.
+5. **User Payment Token (UPT):** After locking RSNs by a volunteer, a new token is issued and paid to the watcher as well as the EWR tokens. A watcher may have multiple EWR tokens, enabling him to create different events on one bridge simultaneously, but UPT is a unique token that identifies the watcher. All bridge reward payments are also spendable by the owner of this unique token.
 
-1. **Rosen Bridge Token (RSN):** Its a token. each watcher need some RSN to work with system
-2. **Ergo Watcher Rosen Token (EWR):** It's a chain specific token. For each blockchain we have an EWR token.
-3. **Guard NFT:** this is a guard identifier token. this token locked in a multisig address. so n of m guard must sign this box.
-4. **Cleanup NFT:** this token used for cleanup service. 
-5. **User Payment Token (UTP!!):** After locking some RSN and get some EWR for each watcher a new UTP issued. creating event need this token. also fee pay to this token
 
 ### Contracts
-
-1. **Watcher Bank**: This contract is system configuration for each chain. In this contract we store number of locked RSN.
-   this box also contain EWR to RSN Factor, Watcher required percent, Max Watcher required count.
-2. **Watcher Lock**: Each watcher lock his/her EWR tokens in this address. this box has UTP in R4. so when watcher wants to create event or redeem EWR to RSN must pay his/her UTP in inputs.
-3. **Watcher Commitment**: When a watcher detect a new event on target chain create a commitment. this commitment contain 
-   1. User UTP
-   2. Commitment Hash
-   3. Request Id: blake2b256(txId on target chain)
-4. **Trigger Event**: When some Watcher creates commitment for same request one of them reveal it using event content. Guards watch this event for payment
-5. **Watcher Fraud Lock**: If some watchers create a fake event a cleanup service move tokens to fraud lock contract. then back it to bank and slash RSNs.
+1. **Watcher Bank**: This contract is the system configuration for each chain. This contract is responsible for tracking the corresponding EWR tokens and locking RSNs to emit new EWRs. It also stores the EWR to RSN factor, the quorum percentage of watchers, and the maximum watcher count for this chain. 
+2. **Watcher Lock**: When a new watcher is registered, his EWR tokens would be locked in this contract. It also stores the UPT id in the registers; the watcher must use his UPT as his authentication in every new event generation, reward reception, or EWR token redemption actions.
+3. **Watcher Commitment**: When a watcher detects a new event on the target chain creates a commitment.
+4. **Trigger Event**: A watcher creates the trigger event after a quorum of watchers reported the same event. He will spend all commitments and reveals the event contents to generate the trigger event. It also stores the reporter UPT ids in the trigger event that the guards will process.
+5. **Watcher Fraud Lock**: Some watchers may create faulty events. The faulty events will be processed by the guards if a quorum of watchers created that event (resulting in a trigger event), but guards will ignore these triggers since they are not verifiable. After a while, the cleanup service collects all these faulty events and slashes their EWR tokens in the fraud lock as punishment.
 
 ### Data
-1. **Event**: any payment request from one chain to other chain. event contain:
+1. **Event**: Any payment request from one chain to the other one. Event contains:
    1. Source tx id
    2. From chain
    3. To chain
@@ -37,30 +36,22 @@ Before explaining the main idea and procedures, it's better to get familiar with
    9. Target chain token id
    10. Source block id
 
-2. **Commitment for user with UTP**: blake2b256 hash of concat event data with user UTP
-
+2. **Commitment:** The event report was created by the watchers. The commitment contains:
+   1. User UPT id
+   2. Commitment (hash of the event content concatenated by the UPT id)
+   3. Event id (hash of related txId on source chain)
 
 ## Rosen Bridge Life Cycle
-
-Each Watcher must do these steps. locking phase occurred once for each watcher.
+In this section, we will review the introduced procedures, stored data, and component dependence in detail. These phases are the life cycle of a bridge, but the Rosen bridge is the collection of different such bridges connecting Ergo to the outside world.
 
 ### Phase 1: Locking RSN
-
-Each user can lock his/her RSN in one gateway bank. and get some EWR. these EWR used to create events.
-In this transaction. This process done in one transaction. In this transaction
-* User must spend current bank and create new bank. 
-  * Append input bank id as UTP to bank R4
-  * Append EWR token bought to R5
-  * Move EWR Tokens to lock contract and add RSN tokens to bank. (EWR to RSN Factor used)
-* Create lock box contain all EWR tokens in it. also write input bank id in R4
-* Issue UTP token with input bank box id.
-
-
-1. **Payment**: The raffle creator must pay the required fee to the raffle creator proxy contract (This step can be passed by creating the raffle throw the raw scripts by an advanced user).
-
-2. **Token Issue**: Each raffle has a set of unique tokens for itself. In this step, the creator payment is spent to issue the raffle ticket tokens. At the same time, the raffle box is created by paying one RST to the raffle box. Thus this step has two outputs, *Raffle Ticket Repo* box and *Inactive Raffle* box.
-
-3. **Merge**: The outputs of the previous step merge to create the *Active Raffle* box.
+As mentioned earlier, each watcher volunteer needs to lock his RSN tokens to receive corresponding EWRs. so in the locking transaction, these requirements must be satisfied:
+* Bank box data should be updated:
+	 * Append his UPT id to the UPT list
+	 * Append the number of receiving EWR tokens to the token count list
+	 * based on EWR/RSN factor, pay RSN to the bank and get the EWRs.
+* A locked box is created containing all EWR tokens. It also stores the UPT id (bank boxId) in its registers.
+* Issue UPT token with input bank boxId and send it to the watcher address.
 
 <p align="center">
 <img src="Images/Lock.png">
@@ -68,49 +59,34 @@ In this transaction. This process done in one transaction. In this transaction
 
 ### Phase 2: Commitment
 
-Each watcher looks on target chain. If new event occurred, Store event data in local database for future use.
-Then create commitment box.
-
-In this transaction
-
-* Spent Locked box
-* Spent a box contain his/her UTP as first token.
-* Any other lock box floating in network can be merged in this transaction. (See Phase 4)
-* All EWR must be in `Output[0]` this contract must send to lock address again. this box also contain user UTP in R4
-* User can create one commitment box contain only one EWR in it. Also, commitment information stored in this box. So box registers are
-  * R4: UTP
-  * R5: blake2b256(request transaction id on target chain)
-  * commitment
-  * lock contract script hash
-
-
+Each watcher observes both chains and, in case of detecting any valid transfer requests, creates the event commitment in the Ergo network. It also stores the request information in its local database for future usage.
+In this transaction:
+* Inputs are:
+   * Locked box containing EWR
+   * A box containing his UPT as its first token
+   * (Optional) Any other locked box in the network can be merged in this transaction (See Phase 4)
+* Only one new Locked box is created so that all remaining EWRs will be aggregated.
+* The created commitment box has exactly one EWR. It also stores all commitment information in its registers.
 
 <p align="center">
 <img src="Images/Commitment.png">
 </p>
 
 
-### Phase 3: Redeem Commitment
-
-In any time your can redeem his/her commitment if it doesn't merge with other commitments.
-This transaction is simple
-Only pay commitment box and create lock box contain EWR. Also, user UTP must spend as first token of second input.
-
+### Phase 3: Commitment Redeem
+At any time watcher can spend the commitment and redeem his EWR if the trigger event is not created using that commitment.
+This simple transaction only spends the commitment box and creates a locked box containing EWR. Besides, user UPT must exist in the second input as the user authenticator.
 
 <p align="center">
 <img src="Images/CommitmentRedeem.png">
 </p>
 
-### Phase 4: Reveal Commitment
+### Phase 4: Commitment Reveal
 
-When some watcher creates commitment for same event, One of them must reveal commitment.
-First watcher must find all commitment with same id.
-Then filter commitments and verify if event data is same or not.
-Then create a transaction with all commitments as input. and one trigger event in output.
-trigger event registers are:
-* R4: list of all UTPs merged in this transaction.
-* R5: Event data parts.
-* R6: Lock contract hash
+In this phase, a watcher creates the trigger event after a quorum of watchers reported the same event. He will spend all commitments and reveals the event contents to generate the trigger event.
+At first, the watcher finds all commitments with the same id. Then, he verifies the commitments with the event data and the issuer's UPT id. Finally, if there are sufficient commitments, he spends them all and creates the trigger event. Created trigger event stores:
+* List of all UPT ids merged in this transaction
+* Event data
 
 <p align="center">
 <img src="Images/TriggerEvent.png">
@@ -118,50 +94,37 @@ trigger event registers are:
 
 ## Phase 5: Guard Payment Process
 
-guards find all trigger events and after required confirmation negotiate together.
-Then create a transaction to pay expected token to user.
-If user requested to pay token other chain (Not Ergo)
-guard pay tokens to user. after confirmation of request on target chain create a transaction like this.
-* spend event as first input.
-* find any commitment which not merged in event and spend as input.
-* wrapped token bank to pay fee.
-* for any used merged in trigger event create one lock contain one EWR and share of fee.
-* for any not merged commitment create lock box contain EWR and share of fee.
-* pay share of guard's fee to any address.
-* write target chain TxId on first box. this information only used for creating statistics.
-
-if user requested tokens on ergo no transaction generated on other chain.
-
-above transaction generated and one box added to end (user payment)
-
+Guards process all trigger events, and if the corresponding payment transaction has received enough confirmation on the source chain, they verify the request information.
+After a quorum of guards verifications (M out of N guards), they create the target chain transaction paying the tokens to the user.
+Finally, the final reward distribution transaction will be done after the payment transaction receives the required confirmation on the target chain. In this transaction:
+* Inputs are:
+	* Trigger Event
+	* Any valid commitment not merged in creating the trigger event
+	* wrapped token bank to pay the transaction fee
+* The reward is distributed between all watchers who created the valid commitment, either merged on the trigger event or spent individually in this transaction. Thus, for each mentioned UPT id, a locked box with the reward share and one EWR is generated.
+* Guards receive their reward share
+* The payment transaction id on the target chain is stored in the first box for future audits.
 <p align="center">
 <img src="Images/Payment.png">
 </p>
 
-### Phase 5': Fraud detected
+All payment process explanations in this section are in the status where Ergo is the source chain. In the opposite direction, the process is similar, but the user payment transaction is done within the reward distribution. So, in that case, one output box is added to the above transaction.
 
-If guards can't verify event do nothing. 
-then cleanup service after a while come and move this event and slash EWR tokens.
-this process has two steps
+### Phase 5': Fraud Detection
+If a quorum of guards couldn't verify a trigger event, they would ignore that event. After a while, the cleanup service spends this trigger event and slashes the collected EWR tokens (or correspondent RSNs) as the fault penalty.
+This process is done in two steps:
 
-1. **Create Fraud boxes**: Service spent event and for each UTP stored in trigger event create one fraud box. 
-this box contain one EWR 
-
+1. **Create Fraud boxes**: cleanup service spends the trigger event and generates fraud boxes for each recorded UPT. Each fraud box contains precisely one EWR.
 <p align="center">
 <img src="Images/MoveFraud.png">
 </p>
 
-2. **Redeem Fraud boxes**: For each Fraud boxes created spend it redeem content to bank.
-then pay RSN to any address required.
-
+2. **Redeem Fraud boxes**: Spend all created fraud boxes, then redeem and slash their RSN tokens.
 <p align="center">
 <img src="Images/SlashToken.png">
 </p>
 
-in both transaction service must spend cleanup token
+The cleanup service box with its unique token should exist in both transactions.
 
-### Phase 6: User collect fees
-
-each user share of fee stored in lock box generated by guards. any time user can spend this box using UTP
-and create new lock box and withdraw fees to any address. in this phase user can merge Locked boxes
-or create event.
+### Phase 6: Watcher Reward Collection
+As mentioned in Phase 5, guards will pay back the EWR token besides the watcher reward after accepting the trigger events. A watcher can spend all these boxes with his UPT as the authentication. He may want to create the new events or merge these boxes and extract the collected rewards.
