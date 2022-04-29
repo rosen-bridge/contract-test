@@ -12,7 +12,7 @@ import scala.util.Random
 
 object Boxes {
 
-  def getRandomHexString(length: Int = 64) = {
+  def getRandomHexString(length: Int = 64): String = {
     val r = new Random()
     val sb = new StringBuffer
     while ( {
@@ -57,7 +57,7 @@ object Boxes {
                    ): OutBox = {
     val txB = ctx.newTxBuilder()
     val R4 = users.map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray
-    val bankBuilder = txB.outBoxBuilder()
+    val repoBuilder = txB.outBoxBuilder()
       .value(Configs.minBoxValue)
       .tokens(
         new ErgoToken(Configs.tokens.RepoNFT, 1),
@@ -71,13 +71,13 @@ object Boxes {
         ErgoValue.of(R7)
       )
     if(RSNCount > 0){
-      bankBuilder.tokens(new ErgoToken(Configs.tokens.RSN, RSNCount))
+      repoBuilder.tokens(new ErgoToken(Configs.tokens.RSN, RSNCount))
     }
-//    println(bankBuilder.build().convertToInputWith(getRandomHexString(),0).toJson(true))
-    bankBuilder.build()
+//    println(repoBuilder.build().convertToInputWith(getRandomHexString(),0).toJson(true))
+    repoBuilder.build()
   }
 
-  def createLockBox(ctx: BlockchainContext, EWRId: String, EWRCount: Long, UTP: Array[Byte], tokens: ErgoToken*): OutBox = {
+  def createPermitBox(ctx: BlockchainContext, EWRId: String, EWRCount: Long, UTP: Array[Byte], tokens: ErgoToken*): OutBox = {
     val txB = ctx.newTxBuilder()
     val tokensSeq = Seq(new ErgoToken(EWRId, EWRCount)) ++ tokens.toSeq
     txB.outBoxBuilder()
@@ -138,7 +138,7 @@ object Boxes {
 
   def calcTotalErgAndTokens(boxes: Seq[InputBox]): mutable.Map[String, Long] ={
     val tokens: mutable.Map[String, Long] = mutable.Map()
-    val totalErg = boxes.map(item => item.getValue).reduce((a, b) => a + b)
+    val totalErg = boxes.map(item => item.getValue).sum
     boxes.foreach(box => {
       box.getTokens.forEach(token => {
         val tokenId = token.getId.toString

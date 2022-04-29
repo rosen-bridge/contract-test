@@ -100,17 +100,23 @@ object Scripts {
        |  }
        |}""".stripMargin
 
-  lazy val WatcherLockScript: String =
+  lazy val WatcherPermitScript: String =
     s"""{
-       |  // R4: Coll[Coll[Byte]] = only one element display user UTP id.
-       |  val BankNFT = fromBase64("BANK_NFT");
-       |  val CommitmentScriptHash = fromBase64("COMMITMENT_SCRIPT_HASH");
-       |  val OutputWithToken = OUTPUTS.slice(2, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
-       |  val OutputWithEWR = OutputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
-       |  val SecondBoxHasEWR = OUTPUTS(1).tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 }
-       |  if(OUTPUTS(0).tokens(0)._1 == BankNFT){
-       |    // Lock or unlock operation. [Bank, Lock, UTP] => [Bank, Lock(optional)]
-       |    val SecondOutputLock = if(SecondBoxHasEWR){
+       |  // ----------------- REGISTERS
+       |  // R4: Coll[Coll[Byte]] = [WID]
+       |  // ----------------- TOKENS
+       |  // 0: X-RWT
+       |  
+       |  val repoNFT = fromBase64("REPO_NFT");
+       |  val commitmentScriptHash = fromBase64("COMMITMENT_SCRIPT_HASH");
+       |  val WID = SELF.R4[Coll[Coll[Byte]]].get(0)
+       |  val outputWithToken = OUTPUTS.slice(2, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
+       |  val outputWithRWT = outputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
+       |  val secondBoxHasRWT = OUTPUTS(1).tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 }
+       |  if(OUTPUTS(0).tokens(0)._1 == repoNFT){
+       |    // Updating Permit (Return or receive more tokens)
+       |    // [Repo, Permit(SELF), WID] => [Repo, Permit(optional), WID(+userChange)]
+       |    val outputPermitCheck = if(secondBoxHasRWT){
        |      allOf(
        |        Coll(
        |          OUTPUTS(1).tokens(0)._1 == SELF.tokens(0)._1,
@@ -123,18 +129,20 @@ object Scripts {
        |    sigmaProp(
        |      allOf(
        |        Coll(
-       |          OutputWithEWR == false,
-       |          INPUTS(2).tokens(0)._1 == SELF.R4[Coll[Coll[Byte]]].get(0),
-       |          SecondOutputLock,
+       |          outputWithRWT == false,
+       |          INPUTS(2).tokens(0)._1 == WID,
+       |          outputPermitCheck,
        |        )
        |      )
        |    )
        |  }else{
-       |    val SecondOutputCommitment = if(SecondBoxHasEWR){
+       |    // Event Commitment Creation
+       |    // [Permit, WID] => [Permit(Optional), Commitment, WID]
+       |    val outputCommitmentCheck = if(secondBoxHasRWT){
        |      allOf(
        |        Coll(
        |          OUTPUTS(1).tokens(0)._1 == SELF.tokens(0)._1,
-       |          blake2b256(OUTPUTS(1).propositionBytes) == CommitmentScriptHash,
+       |          blake2b256(OUTPUTS(1).propositionBytes) == commitmentScriptHash,
        |          OUTPUTS(1).R5[Coll[Coll[Byte]]].isDefined,
        |          OUTPUTS(1).R6[Coll[Byte]].isDefined,
        |          OUTPUTS(1).R7[Coll[Byte]].get == blake2b256(SELF.propositionBytes),
@@ -148,11 +156,11 @@ object Scripts {
        |    sigmaProp(
        |      allOf(
        |        Coll(
-       |          OutputWithEWR == false,
+       |          outputWithRWT == false,
        |          OUTPUTS(0).propositionBytes == SELF.propositionBytes,
        |          OUTPUTS(0).R4[Coll[Coll[Byte]]].get == SELF.R4[Coll[Coll[Byte]]].get,
-       |          INPUTS(1).tokens(0)._1 == SELF.R4[Coll[Coll[Byte]]].get(0),
-       |          SecondOutputCommitment,
+       |          INPUTS(1).tokens(0)._1 == WID,
+       |          outputCommitmentCheck,
        |        )
        |      )
        |    )
@@ -165,7 +173,7 @@ object Scripts {
        |  // R5: Coll[Coll[Byte]] = Request ID = Hash(TxId)
        |  // R6: Coll[Byte] = Commitment Hash
        |  // R7: Coll[Byte] = Lock Script Address Hash
-       |  val BankNFT = fromBase64("BANK_NFT");
+       |  val RepoNFT = fromBase64("REPO_NFT");
        |  val TriggerEventHash = fromBase64("TRIGGER_EVENT_SCRIPT_HASH");
        |  val event = if (blake2b256(INPUTS(0).propositionBytes) == TriggerEventHash) INPUTS(0) else OUTPUTS(0)
        |  val myUTP = SELF.R4[Coll[Coll[Byte]]].get
@@ -195,7 +203,7 @@ object Scripts {
        |
        |  } else if (blake2b256(OUTPUTS(0).propositionBytes) == TriggerEventHash){
        |    // merge events
-       |    // [Commitment1, Commitment2, Commitment3, ...,] + [Bank(DataInput)] => [TriggerEvent]
+       |    // [Commitment1, Commitment2, Commitment3, ...,] + [Repo(DataInput)] => [TriggerEvent]
        |    val commitmentBoxes = INPUTS.filter { (box: Box) => SELF.propositionBytes == box.propositionBytes }
        |    val myUTPCommitments = commitmentBoxes.filter{ (box: Box) => box.R4[Coll[Coll[Byte]]].get == myUTP }
        |    val myUTPExists = UTPs.exists{ (UTP: Coll[Byte]) => Coll(UTP) == myUTP }
@@ -296,17 +304,17 @@ object Scripts {
   lazy val WatcherFraudLockScript: String =
     s"""{
        |  // R4: Coll[Coll[Byte]] = only one element display user UTP id. used to update configuration box
-       |  // [Bank, Fraud, Cleanup] => [Bank]
-       |  val BankNFT = fromBase64("BANK_NFT");
+       |  // [Repo, Fraud, Cleanup] => [Repo]
+       |  val repoNFT = fromBase64("REPO_NFT");
        |  val CleanupNFT = fromBase64("CLEANUP_NFT");
-       |  val OutputWithToken = OUTPUTS.slice(1, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
-       |  val OutputWithEWR = OutputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
-       |  // Lock or unlock operation. [Bank, Lock, UTP] => [Bank, Lock(optional)]
+       |  val outputWithToken = OUTPUTS.slice(1, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
+       |  val outputWithRWT = outputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
+       |  // Lock or unlock operation. [Repo, Lock, UTP] => [Repo, Lock(optional)]
        |  sigmaProp(
        |    allOf(
        |      Coll(
-       |        OutputWithEWR == false,
-       |        INPUTS(0).tokens(0)._1 == BankNFT,
+       |        outputWithRWT == false,
+       |        INPUTS(0).tokens(0)._1 == repoNFT,
        |        INPUTS(2).tokens(0)._1 == CleanupNFT,
        |      )
        |    )

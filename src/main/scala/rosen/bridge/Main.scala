@@ -9,18 +9,18 @@ import java.nio.ByteBuffer
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-class Lock {
+class Permit {
   var sk = Utils.randBigInt
   var EWRBox: InputBox = null;
-  var UTPBox: InputBox = null;
+  var WIDBox: InputBox = null;
   var commitment: InputBox = null;
 
-  def getUTP(): Array[Byte] = {
-    return this.UTPBox.getTokens.get(0).getId.getBytes
+  def getWID(): Array[Byte] = {
+    this.WIDBox.getTokens.get(0).getId.getBytes
   }
 
-  def getUTPHex(): String = {
-    return this.UTPBox.getTokens.get(0).getId.toString
+  def getWIDHex(): String = {
+    this.WIDBox.getTokens.get(0).getId.toString
   }
 
   def getProver(): ErgoProver = {
@@ -61,7 +61,7 @@ class Commitment {
     )
   }
 
-  def hash(UTP: Array[Byte]): Array[Byte] = {
+  def hash(WID: Array[Byte]): Array[Byte] = {
     scorex.crypto.hash.Blake2b256(Array(
       this.sourceTxId,
       this.fromChain.getBytes(),
@@ -73,7 +73,7 @@ class Commitment {
       this.sourceChainTokenId,
       this.targetChainTokenId,
       this.sourceBlockId,
-      UTP
+      WID
     ).reduce((a, b) => a ++ b))
   }
 }
@@ -82,7 +82,7 @@ object Main {
   val sk = Utils.randBigInt
   var EWRId: String = ""
   var repo: InputBox = null
-  var locks: Seq[Lock] = Seq()
+  var permits: Seq[Permit] = Seq()
   var triggerEvent: InputBox = null
 
   def getProver(): ErgoProver = {
@@ -113,10 +113,10 @@ object Main {
     repo = repoTx.getOutputsToSpend.get(0)
   }
 
-  def lockRSN(ctx: BlockchainContext, RSNCount: Long): Unit = {
-    val lock = new Lock();
+  def getPermit(ctx: BlockchainContext, RSNCount: Long): Unit = {
+    val permit = new Permit();
     val EWRCount = RSNCount / 100L
-    val prover = lock.getProver()
+    val prover = permit.getProver()
     val box1 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.RSN, 10000L))
     val oldUsers = repo.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.toSeq.map(item => item.toArray)
     val users = oldUsers ++ Seq(repo.getId.getBytes)
@@ -131,34 +131,34 @@ object Main {
       usersCount,
       0
     )
-    val lockBox = Boxes.createLockBox(ctx, EWRId, EWRCount, repo.getId.getBytes)
+    val permitBox = Boxes.createPermitBox(ctx, EWRId, EWRCount, repo.getId.getBytes)
     val utp = Boxes.createBoxCandidateForUser(ctx, prover.getAddress, Configs.minBoxValue, new ErgoToken(repo.getId.getBytes, 1L))
-    val lockTxUnsigned = ctx.newTxBuilder().boxesToSpend(Seq(repo, box1).asJava)
+    val getPermitTxUnsigned = ctx.newTxBuilder().boxesToSpend(Seq(repo, box1).asJava)
       .fee(Configs.fee)
-      .outputs(repoOut, lockBox, utp)
+      .outputs(repoOut, permitBox, utp)
       .sendChangeTo(prover.getAddress.getErgoAddress)
       .build()
-    val lockTx = prover.sign(lockTxUnsigned)
-    repo = lockTx.getOutputsToSpend.get(0)
-    lock.EWRBox = lockTx.getOutputsToSpend.get(1)
-    lock.UTPBox = lockTx.getOutputsToSpend.get(2)
-    println(s"locked ${lock.getUTPHex()}")
-    locks = locks ++ Seq(lock)
+    val getPermitTx = prover.sign(getPermitTxUnsigned)
+    repo = getPermitTx.getOutputsToSpend.get(0)
+    permit.EWRBox = getPermitTx.getOutputsToSpend.get(1)
+    permit.WIDBox = getPermitTx.getOutputsToSpend.get(2)
+    println(s"permit ${permit.getWIDHex()}")
+    permits = permits ++ Seq(permit)
   }
 
-  def unlockRSN(ctx: BlockchainContext, EWRCount: Long, index: Int): Unit = {
-    val lock = locks(index)
-    val prover = lock.getProver()
+  def returnPermit(ctx: BlockchainContext, EWRCount: Long, index: Int): Unit = {
+    val permit = permits(index)
+    val prover = permit.getProver()
     val box1 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong)
     var R4 = repo.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.clone()
-    val UTPIndex = R4.map(item => item.toArray).indexOf(lock.UTPBox.getTokens.get(0).getId.getBytes)
+    val WIDIndex = R4.map(item => item.toArray).indexOf(permit.WIDBox.getTokens.get(0).getId.getBytes)
     var R5 = repo.getRegisters.get(1).getValue.asInstanceOf[Coll[Long]].toArray.clone()
-    if (R5(UTPIndex) == EWRCount) {
-      R4 = (R4.slice(0, UTPIndex).toSeq ++ R4.slice(UTPIndex + 1, R4.length)).toArray
-      R5 = (R5.slice(0, UTPIndex).toSeq ++ R5.slice(UTPIndex + 1, R5.length)).toArray
-      locks = locks.slice(0, index) ++ locks.slice(index + 1, locks.length)
+    if (R5(WIDIndex) == EWRCount) {
+      R4 = (R4.slice(0, WIDIndex).toSeq ++ R4.slice(WIDIndex + 1, R4.length)).toArray
+      R5 = (R5.slice(0, WIDIndex).toSeq ++ R5.slice(WIDIndex + 1, R5.length)).toArray
+      permits = permits.slice(0, index) ++ permits.slice(index + 1, permits.length)
     } else {
-      R5.update(UTPIndex, R5(UTPIndex) - EWRCount)
+      R5.update(WIDIndex, R5(WIDIndex) - EWRCount)
     }
     val repoOut = Boxes.createRepo(
       ctx,
@@ -167,16 +167,16 @@ object Main {
       Boxes.getTokenCount(Configs.tokens.RSN, repo) - EWRCount * 100L,
       R4.toSeq.map(item => item.toArray),
       R5,
-      UTPIndex
+      WIDIndex
     )
     var candidates = Seq(repoOut)
-    val boxes = Seq(repo, lock.EWRBox, lock.UTPBox, box1)
-    val tokens = Boxes.calcTotalErgAndTokens(Seq(lock.EWRBox, lock.UTPBox, box1))
+    val boxes = Seq(repo, permit.EWRBox, permit.WIDBox, box1)
+    val tokens = Boxes.calcTotalErgAndTokens(Seq(permit.EWRBox, permit.WIDBox, box1))
     tokens.update(Configs.tokens.RepoNFT, 0)
-    tokens.update(EWRId, tokens.getOrElse(EWRId, 0L) - lock.EWRBox.getTokens.get(0).getValue)
-    if (lock.EWRBox.getTokens.get(0).getValue > EWRCount) {
-      val lockedOut = Boxes.createLockBox(ctx, EWRId, Boxes.getTokenCount(EWRId, lock.EWRBox) - EWRCount, lock.UTPBox.getTokens.get(0).getId.getBytes)
-      candidates = candidates ++ Seq(lockedOut)
+    tokens.update(EWRId, tokens.getOrElse(EWRId, 0L) - permit.EWRBox.getTokens.get(0).getValue)
+    if (permit.EWRBox.getTokens.get(0).getValue > EWRCount) {
+      val permitOut = Boxes.createPermitBox(ctx, EWRId, Boxes.getTokenCount(EWRId, permit.EWRBox) - EWRCount, permit.WIDBox.getTokens.get(0).getId.getBytes)
+      candidates = candidates ++ Seq(permitOut)
     }
     tokens.update(Configs.tokens.RSN, tokens.getOrElse(Configs.tokens.RSN, 0L) + EWRCount * 100)
     val totalErgIn: Long = tokens.getOrElse("", 0L)
@@ -190,17 +190,17 @@ object Main {
       }
     })
     candidates = candidates ++ Seq(userOutBuilder.build())
-    val unlockTxUnsigned = ctx.newTxBuilder().boxesToSpend(boxes.asJava)
+    val returnPermitTxUnsigned = ctx.newTxBuilder().boxesToSpend(boxes.asJava)
       .fee(Configs.fee)
       .outputs(candidates: _*)
       .sendChangeTo(prover.getAddress.getErgoAddress)
       .build()
-    val unlockTx = prover.sign(unlockTxUnsigned)
-    //    println(unlockTx.toJson(true))
-    println(s"unlocked: ${lock.getUTPHex()}")
-    repo = unlockTx.getOutputsToSpend.get(0)
-    lock.EWRBox = unlockTx.getOutputsToSpend.get(1)
-    //    lock.UTPBox = unlockTx.getOutputsToSpend.get(2)
+    val returnPermitTx = prover.sign(returnPermitTxUnsigned)
+    //    println(returnPermitTx.toJson(true))
+    println(s"get permit: ${permit.getWIDHex()}")
+    repo = returnPermitTx.getOutputsToSpend.get(0)
+    permit.EWRBox = returnPermitTx.getOutputsToSpend.get(1)
+    //    permit.WIDBox = returnPermitTx.getOutputsToSpend.get(2)
   }
 
   def redeemRepo(ctx: BlockchainContext): Unit = {
@@ -226,94 +226,94 @@ object Main {
   }
 
   def createCommitment(ctx: BlockchainContext, commitment: Commitment, index: Int): Unit = {
-    val lock = locks(index);
-    val UTP = lock.getUTP()
-    val box1 = Boxes.createBoxForUser(ctx, lock.getProver().getAddress, 1e9.toLong)
-    val lockOut = Boxes.createLockBox(ctx, EWRId, Boxes.getTokenCount(EWRId, lock.EWRBox) - 1, UTP)
-    val boxes = Seq(lock.EWRBox, lock.UTPBox, box1)
+    val permit = permits(index);
+    val WID = permit.getWID()
+    val box1 = Boxes.createBoxForUser(ctx, permit.getProver().getAddress, 1e9.toLong)
+    val permitOut = Boxes.createPermitBox(ctx, EWRId, Boxes.getTokenCount(EWRId, permit.EWRBox) - 1, WID)
+    val boxes = Seq(permit.EWRBox, permit.WIDBox, box1)
     val totalErg = boxes.map(item => item.getValue).reduce((a, b) => a + b)
     val userChange = Boxes.createBoxCandidateForUser(
       ctx,
-      lock.getProver().getAddress,
+      permit.getProver().getAddress,
       totalErg - Configs.fee - 2 * Configs.minBoxValue,
-      new ErgoToken(UTP, 1)
+      new ErgoToken(WID, 1)
     )
     val commitmentBox = Boxes.createCommitment(
       ctx,
       EWRId,
-      lock.getUTP(),
+      permit.getWID(),
       commitment.requestId(),
-      commitment.hash(UTP)
+      commitment.hash(WID)
     )
     val commitmentUnsigned = ctx.newTxBuilder().boxesToSpend(boxes.asJava)
       .fee(Configs.fee)
-      .sendChangeTo(lock.getProver().getAddress.getErgoAddress)
-      .outputs(lockOut, commitmentBox, userChange)
+      .sendChangeTo(permit.getProver().getAddress.getErgoAddress)
+      .outputs(permitOut, commitmentBox, userChange)
       .build()
-    val commitmentTx = lock.getProver().sign(commitmentUnsigned)
-    lock.commitment = commitmentTx.getOutputsToSpend.get(1)
-    lock.EWRBox = commitmentTx.getOutputsToSpend.get(0)
-    println(s"user committed: ${lock.getUTPHex()}")
+    val commitmentTx = permit.getProver().sign(commitmentUnsigned)
+    permit.commitment = commitmentTx.getOutputsToSpend.get(1)
+    permit.EWRBox = commitmentTx.getOutputsToSpend.get(0)
+    println(s"user committed: ${permit.getWIDHex()}")
   }
 
   def redeemCommitment(ctx: BlockchainContext, index: Int): Unit = {
-    val lock = locks(index);
-    val prover = lock.getProver()
+    val permit = permits(index);
+    val prover = permit.getProver()
     val box = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong);
-    val newLock = Boxes.createLockBox(ctx, EWRId, 1, lock.getUTP())
-    val inputs = Seq(lock.commitment, lock.UTPBox, box)
+    val newPermit = Boxes.createPermitBox(ctx, EWRId, 1, permit.getWID())
+    val inputs = Seq(permit.commitment, permit.WIDBox, box)
     val redeemUnsigned = ctx.newTxBuilder().boxesToSpend(inputs.asJava)
       .fee(Configs.fee)
-      .outputs(newLock)
+      .outputs(newPermit)
       .sendChangeTo(prover.getAddress.getErgoAddress)
       .build()
     val tx = prover.sign(redeemUnsigned)
-    lock.EWRBox = tx.getOutputsToSpend.get(0)
-    lock.commitment = null
-    println(s"commitment redeem ${lock.getUTPHex()}")
+    permit.EWRBox = tx.getOutputsToSpend.get(0)
+    permit.commitment = null
+    println(s"commitment redeem ${permit.getWIDHex()}")
   }
 
   def triggerEvent(ctx: BlockchainContext, index: Int, exclude: Seq[Int], commitment: Commitment): Unit = {
-    val lock = locks(index)
-    val processLocks = locks.zipWithIndex.collect {
+    val permit = permits(index)
+    val processPermits = permits.zipWithIndex.collect {
       case (a, i) if !exclude.contains(i) => a
     }.filter(item => item != null)
-    val commitments = processLocks.map(item => item.commitment).filter(item => item != null)
-    val UTPs = processLocks.filter(item => item.commitment != null).map(item => item.getUTP())
-    val trigger = Boxes.createTriggerEventBox(ctx, EWRId, UTPs, commitment)
-    val box1 = Boxes.createBoxForUser(ctx, lock.getProver().getAddress, 1e9.toLong)
+    val commitments = processPermits.map(item => item.commitment).filter(item => item != null)
+    val WIDs = processPermits.filter(item => item.commitment != null).map(item => item.getWID())
+    val trigger = Boxes.createTriggerEventBox(ctx, EWRId, WIDs, commitment)
+    val box1 = Boxes.createBoxForUser(ctx, permit.getProver().getAddress, 1e9.toLong)
     val unsignedTx = ctx.newTxBuilder().boxesToSpend((commitments ++ Seq(box1)).asJava)
       .fee(Configs.fee)
       .outputs(trigger)
       .withDataInputs(Seq(repo).asJava)
-      .sendChangeTo(lock.getProver().getAddress.getErgoAddress)
+      .sendChangeTo(permit.getProver().getAddress.getErgoAddress)
       .build()
-    val tx = lock.getProver().sign(unsignedTx)
+    val tx = permit.getProver().sign(unsignedTx)
     triggerEvent = tx.getOutputsToSpend.get(0)
-    processLocks.foreach(item => item.commitment = null)
-    println(s"User Merged commitments ${lock.getUTPHex()}")
+    processPermits.foreach(item => item.commitment = null)
+    println(s"User Merged commitments ${permit.getWIDHex()}")
   }
 
   def guardPayment(ctx: BlockchainContext, commitment: Commitment): Unit = {
     val prover = getProver()
     val wRepo = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(commitment.targetChainTokenId, commitment.fee))
     val guardBox = Boxes.createBoxForUser(ctx, prover.getAddress, Configs.minBoxValue, new ErgoToken(Configs.tokens.GuardNFT, 1))
-    val UTPs = triggerEvent.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray)
-    val UTPHex = UTPs.map(item => Base16.encode(item))
-    val notMergedLocks = locks.filter(item => item.commitment != null && !UTPHex.contains(item.getUTPHex()))
-    val notMergedUTPs = notMergedLocks.map(item => item.getUTP())
-    val userFee = commitment.fee / (UTPs.length + notMergedUTPs.length)
-    val newLocks = (UTPs ++ notMergedUTPs).map(item => {
-      Boxes.createLockBox(ctx, EWRId, 1, item, new ErgoToken(commitment.targetChainTokenId, userFee))
+    val WIDs = triggerEvent.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray)
+    val WIDHex = WIDs.map(item => Base16.encode(item))
+    val notMergedPermits = permits.filter(item => item.commitment != null && !WIDHex.contains(item.getWIDHex()))
+    val notMergedWIDs = notMergedPermits.map(item => item.getWID())
+    val userFee = commitment.fee / (WIDs.length + notMergedWIDs.length)
+    val newPermits = (WIDs ++ notMergedWIDs).map(item => {
+      Boxes.createPermitBox(ctx, EWRId, 1, item, new ErgoToken(commitment.targetChainTokenId, userFee))
     })
-    val inputs = Seq(triggerEvent, guardBox, wRepo) ++ notMergedLocks.map(item => item.commitment)
+    val inputs = Seq(triggerEvent, guardBox, wRepo) ++ notMergedPermits.map(item => item.commitment)
     val unsignedTx = ctx.newTxBuilder().boxesToSpend(inputs.asJava)
       .fee(Configs.fee)
       .sendChangeTo(prover.getAddress.getErgoAddress)
-      .outputs(newLocks: _*)
+      .outputs(newPermits: _*)
       .build()
     val tx = prover.sign(unsignedTx)
-    notMergedLocks.foreach(item => item.commitment = null)
+    notMergedPermits.foreach(item => item.commitment = null)
     println("guard payment completed")
     triggerEvent = null;
   }
@@ -321,14 +321,14 @@ object Main {
   def mergeFraudToRepo(ctx: BlockchainContext, fraud: InputBox): Unit = {
     val prover = getProver()
     val box2 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.CleanupNFT, 1L))
-    val UTP = fraud.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray(0).toArray.clone()
+    val WID = fraud.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray(0).toArray.clone()
     val EWRCount = repo.getTokens.get(1).getValue.toLong + 1
     val RSNCount = repo.getTokens.get(2).getValue.toLong - 100
     var users = repo.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray).clone()
     var userEWR = repo.getRegisters.get(1).getValue.asInstanceOf[Coll[Long]].toArray.clone()
-    val userIndex = users.map(item => Base16.encode(item)).indexOf(Base16.encode(UTP), 0)
+    val userIndex = users.map(item => Base16.encode(item)).indexOf(Base16.encode(WID), 0)
     if(userIndex < 0){
-      println(s"user ${Base16.encode(UTP)} not found in repo")
+      println(s"user ${Base16.encode(WID)} not found in repo")
       return
     }
     if(userEWR(userIndex) > 1){
@@ -345,15 +345,15 @@ object Main {
       .build()
     val signed = prover.sign(unsigned)
     repo = signed.getOutputsToSpend.get(0)
-    println(s"one ${Base16.encode(UTP)} tokens slashed (user index: $userIndex)")
+    println(s"one ${Base16.encode(WID)} tokens slashed (user index: $userIndex)")
   }
 
   def moveToFraud(ctx: BlockchainContext): Unit = {
     val prover = getProver()
-    val UTPs = triggerEvent.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray)
+    val WIDs = triggerEvent.getRegisters.get(0).getValue.asInstanceOf[Coll[Coll[Byte]]].toArray.map(item => item.toArray)
     val box1 = Boxes.createBoxForUser(ctx, prover.getAddress, 1e9.toLong, new ErgoToken(Configs.tokens.CleanupNFT, 1L))
-    val newFraud = UTPs.indices.map(index => {
-      Boxes.createFraudBox(ctx, EWRId, UTPs(index))
+    val newFraud = WIDs.indices.map(index => {
+      Boxes.createFraudBox(ctx, EWRId, WIDs(index))
     })
     val unsignedTx = ctx.newTxBuilder().boxesToSpend(Seq(triggerEvent, box1).asJava)
       .fee(Configs.fee)
@@ -369,16 +369,16 @@ object Main {
   def main(args: Array[String]): Unit = {
     Configs.ergoClient.execute(ctx => {
       createRepoBox(ctx, 1e12.toLong, 100L, "ADA")
-      (1 to 7).foreach(item => lockRSN(ctx, 10000L))
-      unlockRSN(ctx, 100L, 2)
-      unlockRSN(ctx, 99L, 2)
+      (1 to 7).foreach(item => getPermit(ctx, 10000L))
+      returnPermit(ctx, 100L, 2)
+      returnPermit(ctx, 99L, 2)
       redeemRepo(ctx)
       val commitment = new Commitment()
-      locks.indices.foreach(index => createCommitment(ctx, commitment, index))
+      permits.indices.foreach(index => createCommitment(ctx, commitment, index))
       redeemCommitment(ctx, 0)
       triggerEvent(ctx, 1, Seq(2), commitment)
       guardPayment(ctx, commitment)
-      locks.indices.foreach(index => createCommitment(ctx, commitment, index))
+      permits.indices.foreach(index => createCommitment(ctx, commitment, index))
       triggerEvent(ctx, 0, Seq(), commitment)
       moveToFraud(ctx)
       redeemRepo(ctx)
