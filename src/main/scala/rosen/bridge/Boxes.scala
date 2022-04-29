@@ -46,7 +46,7 @@ object Boxes {
       .build()
   }
 
-  def createBankBox(
+  def createRepo(
                      ctx: BlockchainContext,
                      EWRTokenId: String,
                      EWRCount: Long,
@@ -60,10 +60,10 @@ object Boxes {
     val bankBuilder = txB.outBoxBuilder()
       .value(Configs.minBoxValue)
       .tokens(
-        new ErgoToken(Configs.tokens.BankNft, 1),
+        new ErgoToken(Configs.tokens.RepoNFT, 1),
         new ErgoToken(EWRTokenId, EWRCount)
       )
-      .contract(Contracts.WatcherBank)
+      .contract(Contracts.RWTRepo)
       .registers(
         ErgoValue.of(R4, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(JavaHelpers.SigmaDsl.Colls.fromArray(userEWR.toArray), ErgoType.longType()),
@@ -82,7 +82,7 @@ object Boxes {
     val tokensSeq = Seq(new ErgoToken(EWRId, EWRCount)) ++ tokens.toSeq
     txB.outBoxBuilder()
       .value(Configs.minBoxValue)
-      .contract(Contracts.WatcherLock)
+      .contract(Contracts.WatcherPermit)
       .tokens(tokensSeq: _*)
       .registers(
         ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
@@ -113,7 +113,7 @@ object Boxes {
         ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(Seq(RequestId).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(commitment),
-        ErgoValue.of(Contracts.getContractScriptHash(Contracts.WatcherLock)),
+        ErgoValue.of(Contracts.getContractScriptHash(Contracts.WatcherPermit)),
       ).build()
   }
 
@@ -127,7 +127,7 @@ object Boxes {
       .registers(
         ErgoValue.of(R4, ErgoType.collType(ErgoType.byteType())),
         ErgoValue.of(R5, ErgoType.collType(ErgoType.byteType())),
-        ErgoValue.of(Contracts.getContractScriptHash(Contracts.WatcherLock))
+        ErgoValue.of(Contracts.getContractScriptHash(Contracts.WatcherPermit))
       ).build()
   }
 

@@ -2,87 +2,97 @@ package rosen.bridge
 
 object Scripts {
 
-  lazy val WatcherBankScript: String =
+  lazy val RwtRepoScript: String =
     s"""{
-       |  // R4: Coll[Coll[Byte]] = first element in R4 is chain id bytes and the rest is watchers UTP
-       |  // R5: Coll[Long] = first element is zero and every element indicates EWR tokens count for UTP index i
-       |  // R6: Coll[Long] = [RSN to EWR Factor, watcher approve percent, constant value for approve, maximum approve count] approve formula is min(R6[3], R6[1] * (len(R4) - 1) / 100 + R6[2])
-       |  // R7: Int = in case of unlock indicates UTP index in R4 otherwise not used
-       |  val GuardToken = fromBase64("GUARD_TOKEN");
-       |  if(INPUTS(1).tokens(0)._1 == GuardToken){
+       |  // ----------------- REGISTERS
+       |  // R4: Coll[Coll[Byte]] = [Chain id, WID_0, WID_1, ...] (Stores Chain id and related watcher ids)
+       |  // R5: Coll[Long] = [0, X-RWT_0, X-RWT_1, ...] (The first element is zero and the rest indicates X-RWT count for watcher i)
+       |  // R6: Coll[Long] = [RSN/X-RWT factor, Watcher quorum percentage, minimum needed approval, maximum needed approval]
+       |  // (Minimum number of commitments needed for an event is: min(R6[3], R6[1] * (len(R4) - 1) / 100 + R6[2]) )
+       |  // R7: Int = Watcher index (only used in returning permits phase)
+       |  // ----------------- TOKENS
+       |  // 0: X-RWT Repo NFT
+       |  // 1: X-RWT
+       |  // 2: RSN
+       |
+       |  val GuardNFT = fromBase64("GUARD_NFT");
+       |  if(INPUTS(1).tokens(0)._1 == GuardNFT){
+       |    // RWT Repo Update transaction
        |    sigmaProp(true)
        |  } else {
-       |    val lockScriptHash = fromBase64("LOCK_SCRIPT_HASH");
-       |    val bankOut = OUTPUTS(0)
-       |    val bank = SELF
-       |    val bankListSize = bank.R5[Coll[Long]].get.size
-       |    val bankOutListSize = bankOut.R5[Coll[Long]].get.size
-       |    val bankReplication = allOf(
+       |    val permitScriptHash = fromBase64("PERMIT_SCRIPT_HASH");
+       |    val repoOut = OUTPUTS(0)
+       |    val repo = SELF
+       |    val widListSize = repo.R5[Coll[Long]].get.size
+       |    val widOutListSize = repoOut.R5[Coll[Long]].get.size
+       |    val repoReplication = allOf(
        |      Coll(
-       |        bankOut.propositionBytes == bank.propositionBytes,
-       |        bankOut.R6[Coll[Long]].get == bank.R6[Coll[Long]].get,
-       |        bankOut.tokens(0)._1 == bank.tokens(0)._1,
-       |        bankOut.tokens(1)._1 == bank.tokens(1)._1,
-       |        bankOut.tokens(2)._1 == bank.tokens(2)._1,
+       |        repoOut.propositionBytes == repo.propositionBytes,
+       |        repoOut.R6[Coll[Long]].get == repo.R6[Coll[Long]].get,
+       |        repoOut.tokens(0)._1 == repo.tokens(0)._1,
+       |        repoOut.tokens(1)._1 == repo.tokens(1)._1,
+       |        repoOut.tokens(2)._1 == repo.tokens(2)._1,
        |      )
        |    )
-       |    if(bank.tokens(1)._2 > bankOut.tokens(1)._2){
-       |      // Locking RSN.
-       |      // [Bank, UserInputs] => [Bank, LockBox, UserUTP]
-       |      val lock = OUTPUTS(1)
-       |      val UTP = OUTPUTS(2)
-       |      val EWRTokenOut = bank.tokens(1)._2 - bankOut.tokens(1)._2
+       |    if(repo.tokens(1)._2 > repoOut.tokens(1)._2){
+       |      // Getting Watcher Permit
+       |      // [Repo, UserInputs] => [Repo, watcherPermit, WIDToken]
+       |      val permit = OUTPUTS(1)
+       |      val WID = OUTPUTS(2)
+       |      val RWTOut = repo.tokens(1)._2 - repoOut.tokens(1)._2
        |      sigmaProp(
        |        allOf(
        |          Coll(
-       |            bankReplication,
-       |            bankOut.R4[Coll[Coll[Byte]]].get.size == bankListSize + 1,
-       |            bankOut.R4[Coll[Coll[Byte]]].get.slice(0, bankOutListSize - 1) == bank.R4[Coll[Coll[Byte]]].get,
-       |            bankOut.R4[Coll[Coll[Byte]]].get(bankOutListSize - 1) == bank.id,
-       |            bankOut.R5[Coll[Long]].get.size == bankListSize + 1,
-       |            bankOut.R5[Coll[Long]].get.slice(0, bankOutListSize - 1) == bank.R5[Coll[Long]].get,
-       |            bankOut.R5[Coll[Long]].get(bankOutListSize - 1) == EWRTokenOut,
-       |            EWRTokenOut * bank.R6[Coll[Long]].get(0) == bankOut.tokens(2)._2 - bank.tokens(2)._2,
-       |            lock.tokens(0)._2 == EWRTokenOut,
-       |            blake2b256(lock.propositionBytes) == lockScriptHash,
-       |            lock.R4[Coll[Coll[Byte]]].get == Coll(bank.id),
-       |            UTP.tokens(0)._1 == bank.id
+       |            repoReplication,
+       |            repoOut.R4[Coll[Coll[Byte]]].get.size == widListSize + 1,
+       |            repoOut.R4[Coll[Coll[Byte]]].get.slice(0, widOutListSize - 1) == repo.R4[Coll[Coll[Byte]]].get,
+       |            repoOut.R4[Coll[Coll[Byte]]].get(widOutListSize - 1) == repo.id,
+       |            repoOut.R5[Coll[Long]].get.size == widListSize + 1,
+       |            repoOut.R5[Coll[Long]].get.slice(0, widOutListSize - 1) == repo.R5[Coll[Long]].get,
+       |            repoOut.R5[Coll[Long]].get(widOutListSize - 1) == RWTOut,
+       |            RWTOut * repo.R6[Coll[Long]].get(0) == repoOut.tokens(2)._2 - repo.tokens(2)._2,
+       |            permit.tokens(0)._2 == RWTOut,
+       |            blake2b256(permit.propositionBytes) == permitScriptHash,
+       |            permit.R4[Coll[Coll[Byte]]].get == Coll(repo.id),
+       |            WID.tokens(0)._1 == repo.id
        |          )
        |        )
        |      )
        |    }else{
-       |      // Unlock RSN
-       |      // [Bank, EWR] => [Bank]
-       |      val locked = INPUTS(1)
-       |      val EWRTokenIn = bankOut.tokens(1)._2 - bank.tokens(1)._2
-       |      val UTPIndex = bankOut.R7[Int].get
-       |      val lockedSize = bank.R5[Coll[Long]].get.size
-       |      val UTPCheckInBank = if(bank.R5[Coll[Long]].get(UTPIndex) > EWRTokenIn) {
+       |      // Returning Watcher Permit
+       |      // [repo, Permit, WIDToken] => [repo, Permit(Optional), WIDToken(+userChange)]
+       |      val permit = INPUTS(1)
+       |      val RWTIn = repoOut.tokens(1)._2 - repo.tokens(1)._2
+       |      val WIDIndex = repoOut.R7[Int].get
+       |      val watcherCount = repo.R5[Coll[Long]].get.size
+       |      val WIDCheckInrepo = if(repo.R5[Coll[Long]].get(WIDIndex) > RWTIn) {
+       |        // Returning some RWTs
        |        allOf(
        |          Coll(
-       |            bank.R5[Coll[Long]].get(UTPIndex) == bankOut.R5[Coll[Long]].get(UTPIndex) + EWRTokenIn,
-       |            bank.R4[Coll[Coll[Byte]]].get == bankOut.R4[Coll[Coll[Byte]]].get
+       |            repo.R5[Coll[Long]].get(WIDIndex) == repoOut.R5[Coll[Long]].get(WIDIndex) + RWTIn,
+       |            repo.R4[Coll[Coll[Byte]]].get == repoOut.R4[Coll[Coll[Byte]]].get
        |          )
        |        )
        |      }else{
+       |        // Returning the permit
        |        allOf(
        |          Coll(
-       |            bank.R5[Coll[Long]].get(UTPIndex) == EWRTokenIn,
-       |            bank.R4[Coll[Coll[Byte]]].get.slice(0, UTPIndex) == bankOut.R4[Coll[Coll[Byte]]].get.slice(0, UTPIndex),
-       |            bank.R4[Coll[Coll[Byte]]].get.slice(UTPIndex + 1, lockedSize) == bankOut.R4[Coll[Coll[Byte]]].get.slice(UTPIndex, lockedSize - 1),
-       |            bank.R5[Coll[Long]].get.slice(0, UTPIndex) == bankOut.R5[Coll[Long]].get.slice(0, UTPIndex),
-       |            bank.R5[Coll[Long]].get.slice(UTPIndex + 1, lockedSize) == bankOut.R5[Coll[Long]].get.slice(UTPIndex, lockedSize - 1)
+       |            repo.R5[Coll[Long]].get(WIDIndex) == RWTIn,
+       |            repo.R4[Coll[Coll[Byte]]].get.slice(0, WIDIndex) == repoOut.R4[Coll[Coll[Byte]]].get.slice(0, WIDIndex),
+       |            repo.R4[Coll[Coll[Byte]]].get.slice(WIDIndex + 1, watcherCount) == repoOut.R4[Coll[Coll[Byte]]].get.slice(WIDIndex, watcherCount - 1),
+       |            repo.R5[Coll[Long]].get.slice(0, WIDIndex) == repoOut.R5[Coll[Long]].get.slice(0, WIDIndex),
+       |            repo.R5[Coll[Long]].get.slice(WIDIndex + 1, watcherCount) == repoOut.R5[Coll[Long]].get.slice(WIDIndex, watcherCount - 1)
        |          )
        |        )
        |      }
-       |      val UTP = bank.R4[Coll[Coll[Byte]]].get(UTPIndex)
+       |      val WID = repo.R4[Coll[Coll[Byte]]].get(WIDIndex)
        |      sigmaProp(
        |        allOf(
        |          Coll(
-       |            bankReplication,
-       |            Coll(UTP) == locked.R4[Coll[Coll[Byte]]].get,
-       |            EWRTokenIn * bank.R6[Coll[Long]].get(0) == bank.tokens(2)._2 - bankOut.tokens(2)._2,
-       |            UTPCheckInBank
+       |            repoReplication,
+       |            Coll(WID) == permit.R4[Coll[Coll[Byte]]].get,
+       |            RWTIn * repo.R6[Coll[Long]].get(0) == repo.tokens(2)._2 - repoOut.tokens(2)._2,
+       |            WIDCheckInrepo
        |          )
        |        )
        |      )
