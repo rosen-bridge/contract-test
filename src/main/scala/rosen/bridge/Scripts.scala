@@ -65,7 +65,7 @@ object Scripts {
        |      val RWTIn = repoOut.tokens(1)._2 - repo.tokens(1)._2
        |      val WIDIndex = repoOut.R7[Int].get
        |      val watcherCount = repo.R5[Coll[Long]].get.size
-       |      val WIDCheckInrepo = if(repo.R5[Coll[Long]].get(WIDIndex) > RWTIn) {
+       |      val WIDCheckInRepo = if(repo.R5[Coll[Long]].get(WIDIndex) > RWTIn) {
        |        // Returning some RWTs
        |        allOf(
        |          Coll(
@@ -92,7 +92,7 @@ object Scripts {
        |            repoReplication,
        |            Coll(WID) == permit.R4[Coll[Coll[Byte]]].get,
        |            RWTIn * repo.R6[Coll[Long]].get(0) == repo.tokens(2)._2 - repoOut.tokens(2)._2,
-       |            WIDCheckInrepo
+       |            WIDCheckInRepo
        |          )
        |        )
        |      )
