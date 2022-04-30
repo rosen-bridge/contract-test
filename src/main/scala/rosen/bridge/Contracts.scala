@@ -10,7 +10,7 @@ object Contracts {
   lazy val WatcherPermit: ErgoContract = generateWatcherPermitContract()
   lazy val Commitment: ErgoContract = generateCommitmentContract()
   lazy val WatcherTriggerEvent: ErgoContract = generateWatcherTriggerEventContract()
-  lazy val WatcherFraudLock: ErgoContract = generateWatcherFraudLockContract()
+  lazy val Fraud: ErgoContract = generateFraudContract()
 
   def getContractScriptHash(contract: ErgoContract): Digest32 = {
     scorex.crypto.hash.Blake2b256(contract.getErgoTree.bytes)
@@ -33,11 +33,11 @@ object Contracts {
   private def generateWatcherPermitContract(): ErgoContract = {
     Configs.ergoClient.execute(ctx => {
       val commitmentHash = Base64.encode(getContractScriptHash(Commitment))
-      val watcherLockScript = Scripts.WatcherPermitScript
+      val watcherPermitScript = Scripts.WatcherPermitScript
         .replace("REPO_NFT", Base64.encode(Base16.decode(Configs.tokens.RepoNFT).get))
         .replace("COMMITMENT_SCRIPT_HASH", commitmentHash)
 
-      val contract = ctx.compileContract(ConstantsBuilder.create().build(), watcherLockScript)
+      val contract = ctx.compileContract(ConstantsBuilder.create().build(), watcherPermitScript)
       val address = Utils.getContractAddress(contract)
       println(s"Watcher permit address is : \t\t\t$address")
       contract
@@ -60,8 +60,8 @@ object Contracts {
 
   private def generateWatcherTriggerEventContract(): ErgoContract = {
     Configs.ergoClient.execute(ctx => {
-      val fraud = Base64.encode(getContractScriptHash(WatcherFraudLock))
-      val triggerScript = Scripts.WatcherTriggerEventScript
+      val fraud = Base64.encode(getContractScriptHash(Fraud))
+      val triggerScript = Scripts.EventTriggerScript
         .replace("CLEANUP_NFT", Base64.encode(Base16.decode(Configs.tokens.CleanupNFT).get))
         .replace("GUARD_NFT", Base64.encode(Base16.decode(Configs.tokens.GuardNFT).get))
         .replace("FRAUD_SCRIPT_HASH", fraud)
@@ -74,15 +74,15 @@ object Contracts {
     })
   }
 
-  private def generateWatcherFraudLockContract(): ErgoContract = {
+  private def generateFraudContract(): ErgoContract = {
     Configs.ergoClient.execute(ctx => {
-      val fraudScript = Scripts.WatcherFraudLockScript
+      val fraudScript = Scripts.FraudScript
         .replace("CLEANUP_NFT", Base64.encode(Base16.decode(Configs.tokens.CleanupNFT).get))
         .replace("REPO_NFT", Base64.encode(Base16.decode(Configs.tokens.RepoNFT).get))
 
       val contract = ctx.compileContract(ConstantsBuilder.create().build(), fraudScript)
       val address = Utils.getContractAddress(contract)
-      println(s"Watcher fraud address is : \t\t\t$address")
+      println(s"Fraud address is : \t\t\t$address")
       contract
     })
   }

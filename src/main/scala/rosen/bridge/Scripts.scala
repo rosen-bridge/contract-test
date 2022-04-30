@@ -265,11 +265,15 @@ object Scripts {
        |  }
        |}""".stripMargin
 
-  lazy val WatcherTriggerEventScript: String =
+  lazy val EventTriggerScript: String =
     s"""{
-       |  // R4: Coll[Coll[Byte]] a list contain UTP of merged events
-       |  // R5: Coll[Coll[Byte]] event data
-       |  // R6: Coll[Byte] lock contract script hash
+       |  // ----------------- REGISTERS
+       |  // R4: Coll[Coll[Byte]] [WID[]]
+       |  // R5: Coll[Coll[Byte]] Event data
+       |  // R6: Coll[Byte] Permit contract script digest
+       |  // ----------------- TOKENS
+       |  // 0: RWT
+       |
        |  // [TriggerEvent, CleanupToken(if fraud)] => [Fraud1, Fraud2, ...]
        |  val cleanupNFT = fromBase64("CLEANUP_NFT");
        |  val guardNFT = fromBase64("GUARD_NFT");
@@ -290,9 +294,9 @@ object Scripts {
        |      )
        |    )
        |  }
-       |  val UTPs: Coll[Coll[Byte]] = SELF.R4[Coll[Coll[Byte]]].get
-       |  val mergeBoxes = OUTPUTS.slice(0, UTPs.size)
-       |  val checkAllUTPs = UTPs.zip(mergeBoxes).forall {
+       |  val WIDs: Coll[Coll[Byte]] = SELF.R4[Coll[Coll[Byte]]].get
+       |  val mergeBoxes = OUTPUTS.slice(0, WIDs.size)
+       |  val checkAllWIDs = WIDs.zip(mergeBoxes).forall {
        |    (data: (Coll[Byte], Box)) => {
        |      Coll(data._1) == data._2.R4[Coll[Coll[Byte]]].get && data._2.propositionBytes == OUTPUTS(0).propositionBytes
        |    }
@@ -300,29 +304,33 @@ object Scripts {
        |  sigmaProp(
        |    allOf(
        |      Coll(
-       |        UTPs.size == mergeBoxes.size,
-       |        checkAllUTPs,
+       |        WIDs.size == mergeBoxes.size,
+       |        checkAllWIDs,
        |        fraudScriptCheck,
        |      )
        |    )
        |  )
        |}""".stripMargin
 
-  lazy val WatcherFraudLockScript: String =
+  lazy val FraudScript: String =
     s"""{
-       |  // R4: Coll[Coll[Byte]] = only one element display user UTP id. used to update configuration box
-       |  // [Repo, Fraud, Cleanup] => [Repo]
+       |  // ----------------- REGISTERS
+       |  // R4: Coll[Coll[Byte]] = [WID]
+       |  // ----------------- TOKENS
+       |  // 0: RWT
+       |
        |  val repoNFT = fromBase64("REPO_NFT");
-       |  val CleanupNFT = fromBase64("CLEANUP_NFT");
+       |  val cleanupNFT = fromBase64("CLEANUP_NFT");
        |  val outputWithToken = OUTPUTS.slice(1, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
        |  val outputWithRWT = outputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
-       |  // Lock or unlock operation. [Repo, Lock, UTP] => [Repo, Lock(optional)]
+       |  // RSN Slash
+       |  // [Repo, Fraud, Cleanup] => [Repo, Cleanup, Slashed]
        |  sigmaProp(
        |    allOf(
        |      Coll(
        |        outputWithRWT == false,
        |        INPUTS(0).tokens(0)._1 == repoNFT,
-       |        INPUTS(2).tokens(0)._1 == CleanupNFT,
+       |        INPUTS(2).tokens(0)._1 == cleanupNFT,
        |      )
        |    )
        |  )
