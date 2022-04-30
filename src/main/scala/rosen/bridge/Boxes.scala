@@ -107,7 +107,7 @@ object Boxes {
   def createCommitment(ctx: BlockchainContext, EWRId: String, UTP:Array[Byte], RequestId: Array[Byte], commitment: Array[Byte]): OutBox = {
     ctx.newTxBuilder().outBoxBuilder()
       .value(Configs.minBoxValue)
-      .contract(Contracts.WatcherCommitment)
+      .contract(Contracts.Commitment)
       .tokens(new ErgoToken(EWRId, 1))
       .registers(
         ErgoValue.of(Seq(UTP).map(item => JavaHelpers.SigmaDsl.Colls.fromArray(item)).toArray, ErgoType.collType(ErgoType.byteType())),

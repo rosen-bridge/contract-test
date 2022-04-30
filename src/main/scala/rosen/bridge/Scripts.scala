@@ -109,7 +109,7 @@ object Scripts {
        |  
        |  val repoNFT = fromBase64("REPO_NFT");
        |  val commitmentScriptHash = fromBase64("COMMITMENT_SCRIPT_HASH");
-       |  val WID = SELF.R4[Coll[Coll[Byte]]].get(0)
+       |  val WID = SELF.R4[Coll[Coll[Byte]]].get
        |  val outputWithToken = OUTPUTS.slice(2, OUTPUTS.size).filter { (box: Box) => box.tokens.size > 0 }
        |  val outputWithRWT = outputWithToken.exists { (box: Box) => box.tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 } }
        |  val secondBoxHasRWT = OUTPUTS(1).tokens.exists { (token: (Coll[Byte], Long)) => token._1 == SELF.tokens(0)._1 }
@@ -130,7 +130,7 @@ object Scripts {
        |      allOf(
        |        Coll(
        |          outputWithRWT == false,
-       |          INPUTS(2).tokens(0)._1 == WID,
+       |          INPUTS(2).tokens(0)._1 == WID(0),
        |          outputPermitCheck,
        |        )
        |      )
@@ -146,7 +146,7 @@ object Scripts {
        |          OUTPUTS(1).R5[Coll[Coll[Byte]]].isDefined,
        |          OUTPUTS(1).R6[Coll[Byte]].isDefined,
        |          OUTPUTS(1).R7[Coll[Byte]].get == blake2b256(SELF.propositionBytes),
-       |          OUTPUTS(1).R4[Coll[Coll[Byte]]].get == SELF.R4[Coll[Coll[Byte]]].get,
+       |          OUTPUTS(1).R4[Coll[Coll[Byte]]].get == WID,
        |          OUTPUTS(1).tokens(0)._2 == 1,
        |        )
        |      )
@@ -158,8 +158,8 @@ object Scripts {
        |        Coll(
        |          outputWithRWT == false,
        |          OUTPUTS(0).propositionBytes == SELF.propositionBytes,
-       |          OUTPUTS(0).R4[Coll[Coll[Byte]]].get == SELF.R4[Coll[Coll[Byte]]].get,
-       |          INPUTS(1).tokens(0)._1 == WID,
+       |          OUTPUTS(0).R4[Coll[Coll[Byte]]].get == WID,
+       |          INPUTS(1).tokens(0)._1 == WID(0),
        |          outputCommitmentCheck,
        |        )
        |      )
@@ -167,55 +167,63 @@ object Scripts {
        |  }
        |}""".stripMargin
 
-  lazy val WatcherCommitmentScript: String =
+  lazy val CommitmentScript: String =
     s"""{
-       |  // R4: Coll[Coll[Byte]] = Only one element indicates user UTP
-       |  // R5: Coll[Coll[Byte]] = Request ID = Hash(TxId)
-       |  // R6: Coll[Byte] = Commitment Hash
-       |  // R7: Coll[Byte] = Lock Script Address Hash
-       |  val RepoNFT = fromBase64("REPO_NFT");
-       |  val TriggerEventHash = fromBase64("TRIGGER_EVENT_SCRIPT_HASH");
-       |  val event = if (blake2b256(INPUTS(0).propositionBytes) == TriggerEventHash) INPUTS(0) else OUTPUTS(0)
-       |  val myUTP = SELF.R4[Coll[Coll[Byte]]].get
-       |  val UTPs = event.R4[Coll[Coll[Byte]]].get
-       |  val paddedCommitment = if(event.R5[Coll[Coll[Byte]]].isDefined) {
+       |  // ----------------- REGISTERS
+       |  // R4: Coll[Coll[Byte]] = [WID]
+       |  // R5: Coll[Coll[Byte]] = [Request ID (Hash(TxId))]
+       |  // R6: Coll[Byte] = Event Data Digest
+       |  // R7: Coll[Byte] = Permit Script Digest
+       |  // ----------------- TOKENS
+       |  // 0: X-RWT
+       |  
+       |  val eventTriggerHash = fromBase64("EVENT_TRIGGER_SCRIPT_HASH");
+       |  val event = if (blake2b256(INPUTS(0).propositionBytes) == eventTriggerHash) INPUTS(0) else OUTPUTS(0)
+       |  val myWID = SELF.R4[Coll[Coll[Byte]]].get
+       |  val WIDs = event.R4[Coll[Coll[Byte]]].get
+       |  val paddedData = if(event.R5[Coll[Coll[Byte]]].isDefined) {
        |    event.R5[Coll[Coll[Byte]]].get.fold(Coll(0.toByte), { (a: Coll[Byte], b: Coll[Byte]) => a ++ b } )
        |  }else{
        |    Coll(0.toByte)
        |  }
-       |  val commitment = paddedCommitment.slice(1, paddedCommitment.size)
-       |  if(blake2b256(INPUTS(0).propositionBytes) == TriggerEventHash){
-       |    // admin payment of fee
-       |    val userLockBox = OUTPUTS.filter {(box:Box) => if(box.R4[Coll[Coll[Byte]]].isDefined) box.R4[Coll[Coll[Byte]]].get == SELF.R4[Coll[Coll[Byte]]].get else false }(0)
-       |    val UTPExists =  UTPs.exists {(UTP: Coll[Byte]) => myUTP == Coll(UTP)}
+       |  val eventData = paddedData.slice(1, paddedData.size)
+       |  if(blake2b256(INPUTS(0).propositionBytes) == eventTriggerHash){
+       |    // Reward Distribution (for missed commitments)
+       |    // [EventTrigger, Commitments[], BridgeWallet] => [WatcherPermits[], BridgeWallet]
+       |    val permitBox = OUTPUTS.filter {(box:Box) => 
+       |      if(box.R4[Coll[Coll[Byte]]].isDefined)
+       |        box.R4[Coll[Coll[Byte]]].get == myWID
+       |      else false
+       |    }(0)
+       |    val WIDExists =  WIDs.exists {(WID: Coll[Byte]) => myWID == Coll(WID)}
        |    sigmaProp(
        |      allOf(
        |        Coll(
-       |          blake2b256(userLockBox.propositionBytes) == SELF.R7[Coll[Byte]].get,
-       |          userLockBox.tokens(0)._1 == SELF.tokens(0)._1,
+       |          blake2b256(permitBox.propositionBytes) == SELF.R7[Coll[Byte]].get,
+       |          permitBox.tokens(0)._1 == SELF.tokens(0)._1,
        |          // check for duplicates
-       |          UTPExists == false,
+       |          WIDExists == false,
        |          // validate commitment
-       |          blake2b256(commitment ++ myUTP(0)) == SELF.R6[Coll[Byte]].get
+       |          blake2b256(eventData ++ myWID(0)) == SELF.R6[Coll[Byte]].get
        |        )
        |      )
        |    )
        |
-       |  } else if (blake2b256(OUTPUTS(0).propositionBytes) == TriggerEventHash){
-       |    // merge events
-       |    // [Commitment1, Commitment2, Commitment3, ...,] + [Repo(DataInput)] => [TriggerEvent]
+       |  } else if (blake2b256(OUTPUTS(0).propositionBytes) == eventTriggerHash){
+       |    // Event Trigger Creation
+       |    // [Commitments[], WID] + [Repo(DataInput)] => [EventTrigger, WID]
        |    val commitmentBoxes = INPUTS.filter { (box: Box) => SELF.propositionBytes == box.propositionBytes }
-       |    val myUTPCommitments = commitmentBoxes.filter{ (box: Box) => box.R4[Coll[Coll[Byte]]].get == myUTP }
-       |    val myUTPExists = UTPs.exists{ (UTP: Coll[Byte]) => Coll(UTP) == myUTP }
-       |    val bank = CONTEXT.dataInputs(0)
+       |    val myWIDCommitments = commitmentBoxes.filter{ (box: Box) => box.R4[Coll[Coll[Byte]]].get == myWID }
+       |    val myWIDExists = WIDs.exists{ (WID: Coll[Byte]) => Coll(WID) == myWID }
+       |    val repo = CONTEXT.dataInputs(0)
        |    val requestId = if(event.R5[Coll[Coll[Byte]]].isDefined) {
        |      blake2b256(event.R5[Coll[Coll[Byte]]].get(0))
        |    } else {
        |      Coll(0.toByte)
        |    }
-       |    val bankR6 = bank.R6[Coll[Long]].get
-       |    val maxCommitment = bankR6(3)
-       |    val requiredCommitmentFromFormula: Long = bankR6(2) + bankR6(1) * (bank.R4[Coll[Coll[Byte]]].get.size - 1L) / 100L
+       |    val repoR6 = repo.R6[Coll[Long]].get
+       |    val maxCommitment = repoR6(3)
+       |    val requiredCommitmentFromFormula: Long = repoR6(2) + repoR6(1) * (repo.R4[Coll[Coll[Byte]]].get.size - 1L) / 100L
        |    val requiredCommitment = if(maxCommitment < requiredCommitmentFromFormula) {
        |      maxCommitment
        |    } else {
@@ -224,12 +232,12 @@ object Scripts {
        |    sigmaProp(
        |      allOf(
        |        Coll(
-       |          myUTPCommitments.size == 1,
-       |          myUTPExists,
+       |          myWIDCommitments.size == 1,
+       |          myWIDExists,
        |          event.R6[Coll[Byte]].get == SELF.R7[Coll[Byte]].get,
-       |          UTPs.size == commitmentBoxes.size,
+       |          WIDs.size == commitmentBoxes.size,
        |          // TODO verify commitment to be correct
-       |          blake2b256(commitment ++ myUTP(0)) == SELF.R6[Coll[Byte]].get,
+       |          blake2b256(eventData ++ myWID(0)) == SELF.R6[Coll[Byte]].get,
        |          // check event id
        |          SELF.R5[Coll[Coll[Byte]]].get == Coll(requestId),
        |          // check commitment count
@@ -238,19 +246,18 @@ object Scripts {
        |      )
        |    )
        |  } else {
-       |    // token has been redeem
-       |    // [Commitment, UTP] => [Lock]
+       |    // Commitment Redeem
+       |    // [Commitment, WID] => [Permit, WID]
        |    sigmaProp(
        |      allOf(
        |        Coll(
        |          SELF.id == INPUTS(0).id,
        |          OUTPUTS(0).tokens(0)._1 == SELF.tokens(0)._1,
-       |          OUTPUTS(0).tokens(0)._2 == SELF.tokens(0)._2, // not required because only one token available
-       |          // check UTP copied
-       |          OUTPUTS(0).R4[Coll[Coll[Byte]]].get == SELF.R4[Coll[Coll[Byte]]].get,
-       |          // check user UTP
-       |          Coll(INPUTS(1).tokens(0)._1) == SELF.R4[Coll[Coll[Byte]]].get,
-       |          // check lock contract address
+       |          // check WID copied
+       |          OUTPUTS(0).R4[Coll[Coll[Byte]]].get == myWID,
+       |          // check user WID
+       |          INPUTS(1).tokens(0)._1 == myWID(0),
+       |          // check permit contract address
        |          blake2b256(OUTPUTS(0).propositionBytes) == SELF.R7[Coll[Byte]].get
        |        )
        |      )

@@ -214,7 +214,7 @@ object Main {
         repo.getRegisters.get(1),
         repo.getRegisters.get(2),
       )
-    boxBuilder.value(inputs.map(item => item.getValue).reduce((a, b) => a + b) - Configs.fee)
+    boxBuilder.value(inputs.map(item => item.getValue).sum - Configs.fee)
     inputs.foreach(box => box.getTokens.forEach(token => boxBuilder.tokens(token)))
     val txUnsigned = ctx.newTxBuilder().boxesToSpend(inputs.asJava)
       .fee(Configs.fee)
@@ -231,7 +231,7 @@ object Main {
     val box1 = Boxes.createBoxForUser(ctx, permit.getProver().getAddress, 1e9.toLong)
     val permitOut = Boxes.createPermitBox(ctx, EWRId, Boxes.getTokenCount(EWRId, permit.EWRBox) - 1, WID)
     val boxes = Seq(permit.EWRBox, permit.WIDBox, box1)
-    val totalErg = boxes.map(item => item.getValue).reduce((a, b) => a + b)
+    val totalErg = boxes.map(item => item.getValue).sum
     val userChange = Boxes.createBoxCandidateForUser(
       ctx,
       permit.getProver().getAddress,
